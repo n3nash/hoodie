@@ -12,7 +12,8 @@
         "name": "HoodieRollbackPartitionMetadata",
         "fields": [
             {"name": "partitionPath", "type": "string"},
-            {"name": "successDeleteFiles", "type": {"type": "array", "items": "string"}},
+            {"name": "successDeleteFiles", "type":{"type": "array", "items": "string"}},
+            {"name": "commandBlocks", "type": ["null", {"type": "map", "values": "int"}]},
             {"name": "failedDeleteFiles", "type": {"type": "array", "items": "string"}}
         ]
      }

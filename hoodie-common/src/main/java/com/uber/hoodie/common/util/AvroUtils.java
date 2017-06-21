@@ -124,7 +124,7 @@ public class AvroUtils {
         for (HoodieRollbackStat stat : stats) {
             HoodieRollbackPartitionMetadata metadata =
                 new HoodieRollbackPartitionMetadata(stat.getPartitionPath(),
-                    stat.getSuccessDeleteFiles(), stat.getFailedDeleteFiles());
+                    stat.getSuccessDeleteFiles(), stat.getCommandBlocks(), stat.getFailedDeleteFiles());
             partitionMetadataBuilder.put(stat.getPartitionPath(), metadata);
             totalDeleted += stat.getSuccessDeleteFiles().size();
         }

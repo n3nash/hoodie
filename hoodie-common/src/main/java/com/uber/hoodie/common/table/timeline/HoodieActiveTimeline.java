@@ -99,7 +99,7 @@ public class HoodieActiveTimeline extends HoodieDefaultTimeline {
             new String[] {COMMIT_EXTENSION, INFLIGHT_COMMIT_EXTENSION, DELTA_COMMIT_EXTENSION,
                 INFLIGHT_DELTA_COMMIT_EXTENSION, COMPACTION_EXTENSION,
                 INFLIGHT_COMPACTION_EXTENSION, SAVEPOINT_EXTENSION, INFLIGHT_SAVEPOINT_EXTENSION,
-                CLEAN_EXTENSION, INFLIGHT_CLEAN_EXTENSION});
+                CLEAN_EXTENSION, INFLIGHT_CLEAN_EXTENSION, ROLLBACK_EXTENSION, INFLIGHT_ROLLBACK_EXTENSION});
     }
 
     /**
@@ -127,6 +127,15 @@ public class HoodieActiveTimeline extends HoodieDefaultTimeline {
      */
     public HoodieTimeline getCommitsAndCompactionsTimeline() {
         return getTimelineOfActions(Sets.newHashSet(COMMIT_ACTION, COMPACTION_ACTION, DELTA_COMMIT_ACTION));
+    }
+
+    /**
+     * Get all instants (commits, delta commits, compactions, clean, savepoint, rollback) that result in actions, in the active timeline
+     **
+     * @return
+     */
+    public HoodieTimeline getAllCommitsTimeline() {
+        return getTimelineOfActions(Sets.newHashSet(COMMIT_ACTION, COMPACTION_ACTION, DELTA_COMMIT_ACTION, CLEAN_ACTION, SAVEPOINT_ACTION, ROLLBACK_ACTION));
     }
 
     /**

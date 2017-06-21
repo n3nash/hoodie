@@ -118,7 +118,7 @@ public class HoodieAppendHandle<T extends HoodieRecordPayload> extends HoodieIOH
                             .getMetaClient().getBasePath() + partitionPath, e);
                 }
                 Path path = new Path(record.getPartitionPath(),
-                        FSUtils.makeDataFileName(commitTime, TaskContext.getPartitionId(), fileId));
+                        FSUtils.makeLogFileName(fileId, HoodieLogFile.DELTA_EXTENSION, baseCommitTime, this.currentLogFile.getLogVersion()));
                 writeStatus.getStat().setPath(path.toString());
             }
             // update the new location of the record, so we know where to find it next

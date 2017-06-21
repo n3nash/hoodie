@@ -16,37 +16,50 @@
 
 package com.uber.hoodie.table;
 
-import com.uber.hoodie.common.model.HoodieCompactionMetadata;
-import com.uber.hoodie.common.model.HoodieDataFile;
-import com.uber.hoodie.common.table.HoodieTableMetaClient;
-import com.uber.hoodie.common.table.HoodieTimeline;
-import com.uber.hoodie.common.table.timeline.HoodieInstant;
-import com.uber.hoodie.config.HoodieWriteConfig;
+import com.google.common.collect.Maps;
 import com.uber.hoodie.WriteStatus;
 import com.uber.hoodie.common.HoodieCleanStat;
+import com.uber.hoodie.common.HoodieRollbackStat;
 import com.uber.hoodie.common.model.HoodieCommitMetadata;
+import com.uber.hoodie.common.model.HoodieCompactionMetadata;
+import com.uber.hoodie.common.model.HoodieDataFile;
 import com.uber.hoodie.common.model.HoodieKey;
 import com.uber.hoodie.common.model.HoodieRecord;
 import com.uber.hoodie.common.model.HoodieRecordLocation;
 import com.uber.hoodie.common.model.HoodieRecordPayload;
+import com.uber.hoodie.common.table.HoodieTableMetaClient;
+import com.uber.hoodie.common.table.HoodieTimeline;
+import com.uber.hoodie.common.table.timeline.HoodieActiveTimeline;
+import com.uber.hoodie.common.table.timeline.HoodieInstant;
 import com.uber.hoodie.common.util.FSUtils;
+import com.uber.hoodie.config.HoodieWriteConfig;
 import com.uber.hoodie.exception.HoodieIOException;
 import com.uber.hoodie.exception.HoodieUpsertException;
 import com.uber.hoodie.func.LazyInsertIterable;
 import com.uber.hoodie.io.HoodieCleanHelper;
 import com.uber.hoodie.io.HoodieMergeHandle;
-
-import java.util.Optional;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.apache.parquet.avro.AvroParquetReader;
 import org.apache.parquet.avro.AvroReadSupport;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.spark.Partitioner;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFlatMapFunction;
+import org.apache.spark.util.LongAccumulator;
+import org.scalactic.Bool;
+import scala.Option;
+import scala.Tuple2;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -59,22 +72,6 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.IndexedRecord;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
-import org.apache.parquet.avro.AvroParquetReader;
-import org.apache.parquet.avro.AvroReadSupport;
-import org.apache.parquet.hadoop.ParquetReader;
-import org.apache.spark.Partitioner;
-import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.PairFlatMapFunction;
-import scala.Tuple2;
-import scala.Option;
 
 /**
  * Implementation of a very heavily read-optimized Hoodie Table where
@@ -85,7 +82,7 @@ import scala.Option;
  * UPDATES - Produce a new version of the file, just replacing the updated records with new values
  *
  */
-public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends HoodieTable {
+public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends HoodieTable<T> {
     public HoodieCopyOnWriteTable(HoodieWriteConfig config, HoodieTableMetaClient metaClient) {
         super(config, metaClient);
     }
@@ -516,6 +513,58 @@ public class HoodieCopyOnWriteTable<T extends HoodieRecordPayload> extends Hoodi
         } catch (IOException e) {
             throw new HoodieIOException("Failed to clean up after commit", e);
         }
+    }
+
+    protected FileStatus[] toBeDeleted(String partitionPath, List<String> commits) throws IOException {
+        FileSystem fs1 = FSUtils.getFs();
+        FileStatus[] toBeDeleted =
+                fs1.listStatus(new Path(config.getBasePath(), partitionPath), path -> {
+                    if (!path.toString().contains(".parquet")) {
+                        return false;
+                    }
+                    String fileCommitTime = FSUtils.getCommitTime(path.getName());
+                    return commits.contains(fileCommitTime);
+                });
+        return toBeDeleted;
+    }
+
+    @Override
+    public List<HoodieRollbackStat> rollback(JavaSparkContext jsc, List<String> commits) throws IOException {
+        String actionType = this.getCompactedCommitActionType();
+        HoodieActiveTimeline activeTimeline = this.getActiveTimeline();
+        List<String> inflights = this.getInflightCommitTimeline().getInstants().map(HoodieInstant::getTimestamp)
+                .collect(Collectors.toList());
+
+        // Atomically unpublish all the commits
+        commits.stream().filter(s -> !inflights.contains(s))
+                .map(s -> new HoodieInstant(false, actionType, s))
+                .forEach(activeTimeline::revertToInflight);
+        logger.info("Unpublished " + commits);
+
+        // delete all the data files for all these commits
+        logger.info("Clean out all parquet files generated for commits: " + commits);
+        List<HoodieRollbackStat> stats = jsc.parallelize(
+                FSUtils.getAllPartitionPaths(FSUtils.getFs(), this.getMetaClient().getBasePath(), config.shouldAssumeDatePartitioning()))
+                .map((Function<String, HoodieRollbackStat>) partitionPath -> {
+                    // Scan all partitions files with this commit time
+                    logger.info("Cleaning path " + partitionPath);
+                    FileSystem fs1 = FSUtils.getFs();
+                    FileStatus[] toBeDeleted = toBeDeleted(partitionPath, commits);
+                    Map<FileStatus, Boolean> results = Maps.newHashMap();
+                    for (FileStatus file : toBeDeleted) {
+                        boolean success = fs1.delete(file.getPath(), false);
+                        results.put(file, success);
+                        logger.info("Delete file " + file.getPath() + "\t" + success);
+                    }
+                    return HoodieRollbackStat.newBuilder().withPartitionPath(partitionPath)
+                            .withDeletedFileResults(results).build();
+                }).collect();
+
+        // Remove the rolled back inflight commits
+        commits.stream().map(s -> new HoodieInstant(true, actionType, s))
+                .forEach(activeTimeline::deleteInflight);
+        logger.info("Deleted inflight commits " + commits);
+        return stats;
     }
 
     private static class PartitionCleanStat implements Serializable {
