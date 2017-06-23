@@ -410,6 +410,7 @@ public class SchemaUtil {
         }
 
         StringBuilder sb = new StringBuilder("CREATE EXTERNAL TABLE  IF NOT EXISTS ");
+
         sb = sb.append(config.databaseName).append(".").append(config.tableName);
         sb = sb.append("( ").append(columns).append(")");
         if (!config.partitionFields.isEmpty()) {

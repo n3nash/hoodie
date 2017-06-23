@@ -25,12 +25,14 @@ import com.uber.hoodie.common.model.HoodieCompactionMetadata;
 import com.uber.hoodie.common.model.HoodieTableType;
 import com.uber.hoodie.common.table.HoodieTableMetaClient;
 import com.uber.hoodie.common.table.HoodieTimeline;
+import com.uber.hoodie.common.table.TableFileSystemView;
 import com.uber.hoodie.common.table.log.HoodieLogFile;
 import com.uber.hoodie.common.table.log.HoodieLogFormat;
 import com.uber.hoodie.common.table.log.HoodieLogFormat.Reader;
 import com.uber.hoodie.common.table.log.block.HoodieAvroDataBlock;
 import com.uber.hoodie.common.table.log.block.HoodieLogBlock;
 import com.uber.hoodie.common.table.timeline.HoodieInstant;
+import com.uber.hoodie.common.table.view.HoodieTableFileSystemView;
 import com.uber.hoodie.common.util.FSUtils;
 import com.uber.hoodie.exception.HoodieIOException;
 import com.uber.hoodie.exception.InvalidDatasetException;
@@ -87,6 +89,7 @@ public class HoodieHiveClient {
   private FileSystem fs;
   private Connection connection;
   private HoodieTimeline activeTimeline;
+  private TableFileSystemView fileSystemView;
 
   HoodieHiveClient(HiveSyncConfig cfg, HiveConf configuration, FileSystem fs) {
     this.syncConfig = cfg;
@@ -110,14 +113,19 @@ public class HoodieHiveClient {
           "Failed to initialize PartitionValueExtractor class " + cfg.partitionValueExtractorClass,
           e);
     }
-
     activeTimeline = metaClient.getActiveTimeline().getCommitsAndCompactionsTimeline()
         .filterCompletedInstants();
+    fileSystemView = new HoodieTableFileSystemView(metaClient, activeTimeline);
   }
 
   public HoodieTimeline getActiveTimeline() {
     return activeTimeline;
   }
+
+  public TableFileSystemView getFileSystemView() {
+    return fileSystemView;
+  }
+
 
   /**
    * Add the (NEW) partitons to the table
