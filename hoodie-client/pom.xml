@@ -169,6 +169,30 @@
         <dependency>
             <groupId>org.apache.hbase</groupId>
             <artifactId>hbase-client</artifactId>
+            <version>1.0.0-cdh5.4.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.htrace</groupId>
+            <artifactId>htrace-core</artifactId>
+            <version>3.0.4</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-testing-util</artifactId>
+            <version>1.0.0-cdh5.4.2</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.codehaus.jackson</groupId>
+                    <artifactId>jackson-mapper-asl</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.codehaus.jackson</groupId>
+                    <artifactId>jackson-core-asl</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
