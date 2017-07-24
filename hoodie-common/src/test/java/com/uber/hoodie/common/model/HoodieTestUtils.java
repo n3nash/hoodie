@@ -68,6 +68,10 @@ public class HoodieTestUtils {
         return initTableType(basePath, HoodieTableType.COPY_ON_WRITE);
     }
 
+    public static void resetFS() {
+        fs = FSUtils.getFs();
+    }
+
     public static HoodieTableMetaClient initTableType(String basePath, HoodieTableType tableType) throws IOException {
         Properties properties = new Properties();
         properties.setProperty(HoodieTableConfig.HOODIE_TABLE_NAME_PROP_NAME, RAW_TRIPS_TEST_NAME);

@@ -16,10 +16,9 @@
 
 package com.uber.hoodie.common;
 
-import com.uber.hoodie.common.model.HoodieCleaningPolicy;
-import com.uber.hoodie.common.table.timeline.HoodieInstant;
 import org.apache.hadoop.fs.FileStatus;
 
+import java.io.File;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
@@ -34,12 +33,18 @@ public class HoodieRollbackStat implements Serializable {
     private final List<String> successDeleteFiles;
     // Files that could not be deleted
     private final List<String> failedDeleteFiles;
+    private final Map<FileStatus, Long> commandBlocks;
 
     public HoodieRollbackStat(String partitionPath, List<String> successDeleteFiles,
-        List<String> failedDeleteFiles) {
+        List<String> failedDeleteFiles, Map<FileStatus, Long> commandBlocks) {
         this.partitionPath = partitionPath;
         this.successDeleteFiles = successDeleteFiles;
         this.failedDeleteFiles = failedDeleteFiles;
+        this.commandBlocks = commandBlocks;
+    }
+
+    public Map<FileStatus, Long> getCommandBlocks() {
+        return commandBlocks;
     }
 
     public String getPartitionPath() {
@@ -61,6 +66,7 @@ public class HoodieRollbackStat implements Serializable {
     public static class Builder {
         private List<String> successDeleteFiles;
         private List<String> failedDeleteFiles;
+        private Map<FileStatus, Long> commandBlocks;
         private String partitionPath;
 
         public Builder withDeletedFileResults(Map<FileStatus, Boolean> deletedFiles) {
@@ -72,13 +78,18 @@ public class HoodieRollbackStat implements Serializable {
             return this;
         }
 
+        public Builder withRollbackBlockAppendResults(Map<FileStatus, Long> commandBlocks) {
+            this.commandBlocks = commandBlocks;
+            return this;
+        }
+
         public Builder withPartitionPath(String partitionPath) {
             this.partitionPath = partitionPath;
             return this;
         }
 
         public HoodieRollbackStat build() {
-            return new HoodieRollbackStat(partitionPath, successDeleteFiles, failedDeleteFiles);
+            return new HoodieRollbackStat(partitionPath, successDeleteFiles, failedDeleteFiles, commandBlocks);
         }
     }
 }
