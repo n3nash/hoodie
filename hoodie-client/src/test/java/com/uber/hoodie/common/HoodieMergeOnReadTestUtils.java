@@ -60,9 +60,11 @@ public class HoodieMergeOnReadTestUtils {
                     GenericRecordBuilder newRecord = new GenericRecordBuilder(schema);
                     // writable returns an array with [field1, field2, _hoodie_commit_time, _hoodie_commit_seqno]
                     Writable[] values = writable.get();
-                    schema.getFields().forEach(field -> {
-                        newRecord.set(field, values[2]);
-                    });
+                    int i = 0;
+                    for(Schema.Field field : schema.getFields()) {
+                        newRecord.set(field, values[i]);
+                        i++;
+                    };
                     records.add(newRecord.build());
                 }
             } catch (IOException ie) {

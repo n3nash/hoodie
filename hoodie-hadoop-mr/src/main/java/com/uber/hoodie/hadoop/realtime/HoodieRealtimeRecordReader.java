@@ -21,6 +21,7 @@ package com.uber.hoodie.hadoop.realtime;
 import com.google.common.collect.Lists;
 import com.uber.hoodie.common.model.HoodieAvroPayload;
 import com.uber.hoodie.common.model.HoodieRecord;
+import com.uber.hoodie.common.table.HoodieTimeline;
 import com.uber.hoodie.common.table.log.HoodieCompactedLogRecordScanner;
 import com.uber.hoodie.common.util.FSUtils;
 import com.uber.hoodie.exception.HoodieException;
@@ -133,6 +134,11 @@ public class HoodieRealtimeRecordReader implements RecordReader<Void, ArrayWrita
             GenericRecord rec = (GenericRecord) hoodieRecord.getData().getInsertValue(readerSchema)
                 .get();
             String key = hoodieRecord.getRecordKey();
+            String commitTime = rec.get(HoodieRecord.COMMIT_TIME_METADATA_FIELD).toString();
+            if (HoodieTimeline.compareTimestamps(commitTime, split.getMaxCommitTime(), HoodieTimeline.GREATER)) {
+                // stop reading this log file. we hit a record later than max known commit time.
+                break;
+            }
             // we assume, a later safe record in the log, is newer than what we have in the map & replace it.
             ArrayWritable aWritable = (ArrayWritable) avroToArrayWritable(rec, writerSchema);
             deltaRecordMap.put(key, aWritable);
