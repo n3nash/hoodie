@@ -43,6 +43,7 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
     private static final String DEFAULT_PARALLELISM = "200";
     private static final String INSERT_PARALLELISM = "hoodie.insert.shuffle.parallelism";
     private static final String UPSERT_PARALLELISM = "hoodie.upsert.shuffle.parallelism";
+    private static final String BULK_INSERT_PARALLELISM = "hoodie.bulk.insert.parallelism";
     private static final String COMBINE_BEFORE_INSERT_PROP = "hoodie.combine.before.insert";
     private static final String DEFAULT_COMBINE_BEFORE_INSERT = "false";
     private static final String COMBINE_BEFORE_UPSERT_PROP = "hoodie.combine.before.upsert";
@@ -80,6 +81,10 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
 
     public Boolean shouldAssumeDatePartitioning() {
         return Boolean.parseBoolean(props.getProperty(HOODIE_ASSUME_DATE_PARTITIONING_PROP));
+    }
+
+    public int getBulkInsertParallelism() {
+        return Integer.parseInt(props.getProperty(BULK_INSERT_PARALLELISM));
     }
 
     public int getInsertShuffleParallelism() {
@@ -303,6 +308,11 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
             return this;
         }
 
+        public Builder withBulkInsertParallelism(int bulkInsertParallelism) {
+            props.setProperty(BULK_INSERT_PARALLELISM, String.valueOf(bulkInsertParallelism));
+            return this;
+        }
+
         public Builder withParallelism(int insertShuffleParallelism, int upsertShuffleParallelism) {
             props.setProperty(INSERT_PARALLELISM, String.valueOf(insertShuffleParallelism));
             props.setProperty(UPSERT_PARALLELISM, String.valueOf(upsertShuffleParallelism));
@@ -359,6 +369,8 @@ public class HoodieWriteConfig extends DefaultHoodieConfig {
             // Check for mandatory properties
             Preconditions.checkArgument(config.getBasePath() != null);
             setDefaultOnCondition(props, !props.containsKey(INSERT_PARALLELISM), INSERT_PARALLELISM,
+                DEFAULT_PARALLELISM);
+            setDefaultOnCondition(props, !props.containsKey(BULK_INSERT_PARALLELISM), BULK_INSERT_PARALLELISM,
                 DEFAULT_PARALLELISM);
             setDefaultOnCondition(props, !props.containsKey(UPSERT_PARALLELISM), UPSERT_PARALLELISM,
                 DEFAULT_PARALLELISM);

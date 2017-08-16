@@ -232,8 +232,8 @@ public class HoodieWriteClient<T extends HoodieRecordPayload> implements Seriali
                         // the records split evenly across RDD partitions, such that small partitions fit
                         // into 1 RDD partition, while big ones spread evenly across multiple RDD partitions
                         return String
-                            .format("%s+%s", record.getPartitionPath(), record.getRecordKey());
-                    }, true, config.getInsertShuffleParallelism());
+                                .format("%s+%s", record.getPartitionPath(), record.getRecordKey());
+                    }, true, config.getBulkInsertParallelism());
             JavaRDD<WriteStatus> writeStatusRDD = sortedRecords
                     .mapPartitionsWithIndex(new BulkInsertMapFunction<T>(commitTime, config, table), true)
                     .flatMap(writeStatuses -> writeStatuses.iterator());
