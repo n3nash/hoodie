@@ -24,8 +24,10 @@ import org.apache.avro.Schema;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * Iterable to lazily fetch values spilled to disk.
@@ -76,7 +78,12 @@ public class LazyFileIterable<T> implements Iterable<T> {
       this.readOnlyFileHandle = file;
       this.schema = schema;
       this.payloadClazz = payloadClazz;
-      this.metadataIterator = map.entrySet().iterator();
+      this.metadataIterator =  map.entrySet().iterator();
+      // uncomment the line below for sorted map itr via valuePosition to avoid seek() back and forth
+//      map.entrySet().stream().sorted((Map.Entry<T, DiskBasedMap.ValueMetadata> o1,
+//                                      Map.Entry<T, DiskBasedMap.ValueMetadata> o2) -> o1.getValue().getValuePosition() < o2.getValue().getValuePosition() ? 1 : -1)
+//          .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue(),(e1, e2) -> e1, LinkedHashMap::new))
+//          .entrySet().iterator();
     }
     @Override
     public boolean hasNext() {
