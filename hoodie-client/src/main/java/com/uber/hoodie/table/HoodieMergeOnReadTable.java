@@ -340,20 +340,20 @@ public class HoodieMergeOnReadTable<T extends HoodieRecordPayload> extends
         // find smallest file in partition and append to it
 
         // TODO - check if index.isglobal then small files are log files too
-        Optional<FileSlice> smallFileSlice = getRTFileSystemView()
+        List<FileSlice> smallFileSlices = getRTFileSystemView()
             .getLatestFileSlicesBeforeOrOn(partitionPath, latestCommitTime.getTimestamp()).filter(
                 fileSlice -> fileSlice.getLogFiles().count() < 1
                     && fileSlice.getDataFile().get().getFileSize() < config
                     .getParquetSmallFileLimit()).sorted((FileSlice left, FileSlice right) ->
                 left.getDataFile().get().getFileSize() < right.getDataFile().get().getFileSize()
-                    ? -1 : 1).findFirst();
+                    ? -1 : 1).collect(Collectors.toList());
 
-        if (smallFileSlice.isPresent()) {
-          String filename = smallFileSlice.get().getDataFile().get().getFileName();
+        for (FileSlice smallFileSlice : smallFileSlices) {
+          String filename = smallFileSlice.getDataFile().get().getFileName();
           SmallFile sf = new SmallFile();
           sf.location = new HoodieRecordLocation(FSUtils.getCommitTime(filename),
               FSUtils.getFileId(filename));
-          sf.sizeBytes = smallFileSlice.get().getDataFile().get().getFileSize();
+          sf.sizeBytes = smallFileSlice.getDataFile().get().getFileSize();
           smallFileLocations.add(sf);
           // Update the global small files list
           smallFiles.add(sf);
