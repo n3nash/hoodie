@@ -21,12 +21,16 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.Properties;
 import javax.annotation.concurrent.Immutable;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
 
 /**
  * Storage related config
  */
 @Immutable
 public class HoodieStorageConfig extends DefaultHoodieConfig {
+
+  private static transient Logger logger = LogManager.getLogger(HoodieStorageConfig.class);
 
   public static final String PARQUET_FILE_MAX_BYTES = "hoodie.parquet.max.file.size";
   public static final String DEFAULT_PARQUET_FILE_MAX_BYTES = String.valueOf(120 * 1024 * 1024);

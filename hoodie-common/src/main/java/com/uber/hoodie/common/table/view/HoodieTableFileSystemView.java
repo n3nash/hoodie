@@ -124,7 +124,7 @@ public class HoodieTableFileSystemView implements TableFileSystemView,
   /**
    * Adds the provided statuses into the file system view, and also caches it inside this object.
    */
-  private List<HoodieFileGroup> addFilesToView(FileStatus[] statuses) {
+  protected List<HoodieFileGroup> addFilesToView(FileStatus[] statuses) {
     Map<Pair<String, String>, List<HoodieDataFile>> dataFiles = convertFileStatusesToDataFiles(
         statuses)
         .collect(Collectors.groupingBy((dataFile) -> {
@@ -198,6 +198,7 @@ public class HoodieTableFileSystemView implements TableFileSystemView,
   private boolean isDataFileDueToPendingCompaction(HoodieDataFile dataFile) {
     String compactionInstantTime = fileIdToPendingCompactionInstantTime.get(dataFile.getFileId());
     if ((null != compactionInstantTime) && dataFile.getCommitTime().equals(compactionInstantTime)) {
+      log.info("Data File " + dataFile + " is due to pending compaction : " + compactionInstantTime);
       return true;
     }
     return false;
@@ -277,6 +278,10 @@ public class HoodieTableFileSystemView implements TableFileSystemView,
         .filter(df -> !isDataFileDueToPendingCompaction(df));
   }
 
+  public Map<String, String> getFileIdToPendingCompactionInstantTimeMap() {
+    return fileIdToPendingCompactionInstantTime;
+  }
+
   @Override
   public Stream<FileSlice> getLatestFileSlices(String partitionPath) {
     return getAllFileGroups(partitionPath)
@@ -310,6 +315,7 @@ public class HoodieTableFileSystemView implements TableFileSystemView,
   private boolean isFileSliceAfterPendingCompaction(FileSlice fileSlice) {
     String compactionInstantTime = fileIdToPendingCompactionInstantTime.get(fileSlice.getFileId());
     if ((null != compactionInstantTime) && fileSlice.getBaseInstantTime().equals(compactionInstantTime)) {
+      log.info("File Slice " + fileSlice + " is after pending compaction : " + compactionInstantTime);
       return true;
     }
     return false;
@@ -431,5 +437,13 @@ public class HoodieTableFileSystemView implements TableFileSystemView,
       throw new HoodieIOException(
           "Failed to list data files in partition " + partitionPathStr, e);
     }
+  }
+
+  /**
+   * Used by Hoodie CLI
+   * @return
+   */
+  public HashMap<String, HoodieFileGroup> getFileGroupMap() {
+    return fileGroupMap;
   }
 }

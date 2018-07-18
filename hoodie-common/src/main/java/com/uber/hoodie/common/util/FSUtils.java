@@ -58,6 +58,7 @@ public class FSUtils {
   private static final String HOODIE_ENV_PROPS_PREFIX = "HOODIE_ENV_";
 
   public static Configuration prepareHadoopConf(Configuration conf) {
+    conf.set("fs.viewfs.impl", org.apache.hadoop.fs.viewfs.ViewFileSystem.class.getName());
     conf.set("fs.hdfs.impl", org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());
     conf.set("fs.file.impl", org.apache.hadoop.fs.LocalFileSystem.class.getName());
 
@@ -128,6 +129,9 @@ public class FSUtils {
     return fullFileName.split("_")[0];
   }
 
+  public static String getBaseInstantFromDataFile(String fullFileName) {
+    return fullFileName.split("_")[2];
+  }
 
   /**
    * Gets all partition paths assuming date partitioning (year, month, day) three levels down.
@@ -355,7 +359,6 @@ public class FSUtils {
     // skip MIN_CLEAN_TO_KEEP and delete rest
     instants.skip(MIN_CLEAN_TO_KEEP).map(s -> {
       try {
-        LOG.info("DELETING older clean meta file " + new Path(metaPath, s.getFileName()));
         return fs.delete(new Path(metaPath, s.getFileName()), false);
       } catch (IOException e) {
         throw new HoodieIOException("Could not delete clean meta files" + s.getFileName(),
@@ -370,7 +373,6 @@ public class FSUtils {
     // skip MIN_ROLLBACK_TO_KEEP and delete rest
     instants.skip(MIN_ROLLBACK_TO_KEEP).map(s -> {
       try {
-        LOG.info("DELETING older rollback meta file " + new Path(metaPath, s.getFileName()));
         return fs.delete(new Path(metaPath, s.getFileName()), false);
       } catch (IOException e) {
         throw new HoodieIOException(

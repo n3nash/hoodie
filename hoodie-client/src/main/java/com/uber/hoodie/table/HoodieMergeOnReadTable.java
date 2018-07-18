@@ -36,7 +36,7 @@ import com.uber.hoodie.common.table.log.block.HoodieCommandBlock.HoodieCommandBl
 import com.uber.hoodie.common.table.log.block.HoodieLogBlock.HeaderMetadataType;
 import com.uber.hoodie.common.table.timeline.HoodieActiveTimeline;
 import com.uber.hoodie.common.table.timeline.HoodieInstant;
-import com.uber.hoodie.common.util.CompactionUtils;
+import com.uber.hoodie.common.table.view.HoodieTableFileSystemView;
 import com.uber.hoodie.common.util.FSUtils;
 import com.uber.hoodie.config.HoodieWriteConfig;
 import com.uber.hoodie.exception.HoodieCompactionException;
@@ -150,7 +150,8 @@ public class HoodieMergeOnReadTable<T extends HoodieRecordPayload> extends
     HoodieRealtimeTableCompactor compactor = new HoodieRealtimeTableCompactor();
     try {
       return compactor.generateCompactionPlan(jsc, this, config, instantTime,
-          new HashSet<>(CompactionUtils.getAllPendingCompactionOperations(metaClient).keySet()));
+          new HashSet<>(((HoodieTableFileSystemView)getRTFileSystemView())
+              .getFileIdToPendingCompactionInstantTimeMap().keySet()));
     } catch (IOException e) {
       throw new HoodieCompactionException("Could not schedule compaction " + config.getBasePath(), e);
     }
@@ -233,9 +234,9 @@ public class HoodieMergeOnReadTable<T extends HoodieRecordPayload> extends
                   Map<FileStatus, Long> filesToNumBlocksRollback = new HashMap<>();
 
                   // In case all data was inserts and the commit failed, there is no partition stats
-                  if (commitMetadata.getPartitionToWriteStats().size() == 0) {
-                    super.deleteCleanedFiles(filesToDeletedStatus, partitionPath, filter);
-                  }
+                  //if (commitMetadata.getPartitionToWriteStats().size() == 0) {
+                  super.deleteCleanedFiles(filesToDeletedStatus, partitionPath, filter);
+                  //}
 
                   // append rollback blocks for updates
                   if (commitMetadata.getPartitionToWriteStats().containsKey(partitionPath)) {
@@ -275,8 +276,6 @@ public class HoodieMergeOnReadTable<T extends HoodieRecordPayload> extends
                                 .withFileId(wStat.getFileId()).overBaseCommit(baseCommitTime)
                                 .withFs(this.metaClient.getFs())
                                 .withFileExtension(HoodieLogFile.DELTA_EXTENSION).build();
-                            logger.info("Writing rollback block to " + writer.getLogFile().getPath());
-
                             Long numRollbackBlocks = 0L;
                             // generate metadata
                             Map<HeaderMetadataType, String> header =

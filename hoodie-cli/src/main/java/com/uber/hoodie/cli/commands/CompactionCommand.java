@@ -33,9 +33,10 @@ import com.uber.hoodie.common.table.HoodieTimeline;
 import com.uber.hoodie.common.table.timeline.HoodieActiveTimeline;
 import com.uber.hoodie.common.table.timeline.HoodieInstant;
 import com.uber.hoodie.common.table.timeline.HoodieInstant.State;
+import com.uber.hoodie.common.table.view.HoodieTableFileSystemView;
 import com.uber.hoodie.common.util.AvroUtils;
 import com.uber.hoodie.common.util.CompactionUtils;
-import com.uber.hoodie.common.util.CompactionUtils.ValidationResult;
+import com.uber.hoodie.common.util.CompactionUtils.CompactionValidationResult;
 import com.uber.hoodie.exception.HoodieIOException;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -48,6 +49,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.fs.Path;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.apache.spark.launcher.SparkLauncher;
@@ -174,14 +176,6 @@ public class CompactionCommand implements CommandMarker {
     return HoodiePrintHelper.print(header, fieldNameToConverterMap, sortByField, descending, limit, headerOnly, rows);
   }
 
-  @CliCommand(value = "compaction repair", help = "Repair Compaction")
-  public String repairCompaction(
-      @CliOption(key = "compactionInstant", mandatory = true, help = "Compaction Instant")
-      final String compactionInstant) throws Exception {
-    // Rename to
-    throw new IllegalStateException("Not Implemented yet");
-  }
-
   @CliCommand(value = "compaction validate", help = "Validate Compaction")
   public String validateCompaction(
       @CliOption(key = "compactionInstant", mandatory = true, help = "Compaction Instant")
@@ -194,13 +188,13 @@ public class CompactionCommand implements CommandMarker {
           "headeronly"}, help = "Print Header Only", unspecifiedDefaultValue = "false") final boolean headerOnly)
       throws Exception {
     HoodieTableMetaClient metaClient = HoodieCLI.tableMetadata;
-    List<ValidationResult> res = CompactionUtils.validateCompactionPlan(metaClient, compactionInstant);
+    List<CompactionValidationResult> res = CompactionUtils.validateCompactionPlan(metaClient, compactionInstant);
     List<Comparable[]> rows = new ArrayList<>();
     res.stream().forEach(r -> {
-      Comparable[] row = new Comparable[] { r.getOperation().getFileId(),
+      Comparable[] row = new Comparable[]{r.getOperation().getFileId(),
           r.getOperation().getBaseInstantTime(), r.getOperation().getDataFilePath(),
           r.getOperation().getDeltaFilePaths().size(), r.isSuccess(),
-          r.getErrorMessage().isPresent() ? r.getErrorMessage().get().getMessage() : "" };
+          r.getErrorMessage().isPresent() ? r.getErrorMessage().get().getMessage() : ""};
       rows.add(row);
     });
 
@@ -219,12 +213,15 @@ public class CompactionCommand implements CommandMarker {
   @CliCommand(value = "compaction unschedule", help = "Unschedule Compaction")
   public String unscheduleCompaction(
       @CliOption(key = "compactionInstant", mandatory = true, help = "Compaction Instant")
-      final String compactionInstant) throws Exception {
+      final String compactionInstant,
+      @CliOption(key = {
+          "skipValidation"}, help = "Ordering", unspecifiedDefaultValue = "false") final boolean skipValidation)
+      throws Exception {
 
     HoodieTableMetaClient metaClient = HoodieCLI.tableMetadata;
     List<Pair<HoodieLogFile, HoodieLogFile>> renameActions =
         CompactionUtils.getRenamingActionsForUnschedulingCompactionPlan(metaClient, compactionInstant,
-            Optional.empty());
+            Optional.empty(), skipValidation);
 
     runRenamingOps(metaClient, renameActions);
 
@@ -233,6 +230,12 @@ public class CompactionCommand implements CommandMarker {
     HoodieCompactionPlan newPlan =
         HoodieCompactionPlan.newBuilder().setOperations(new ArrayList<>()).setExtraMetadata(plan.getExtraMetadata())
             .build();
+    HoodieInstant inflight = new HoodieInstant(State.INFLIGHT, COMPACTION_ACTION, compactionInstant);
+    Path inflightPath = new Path(metaClient.getMetaPath(), inflight.getFileName());
+    if (metaClient.getFs().exists(inflightPath)) {
+      // revert if in inflight state
+      metaClient.getActiveTimeline().revertCompactionInflightToRequested(inflight);
+    }
     metaClient.getActiveTimeline().saveToCompactionRequested(
         new HoodieInstant(State.REQUESTED, COMPACTION_ACTION, compactionInstant),
         AvroUtils.serializeCompactionPlan(newPlan));
@@ -241,11 +244,15 @@ public class CompactionCommand implements CommandMarker {
 
   @CliCommand(value = "compaction unscheduleFileId", help = "UnSchedule Compaction for a fileId")
   public String unscheduleCompactFile(
-      @CliOption(key = "fileId", mandatory = true, help = "File Id") final String fileId) throws Exception {
+      @CliOption(key = "fileId", mandatory = true, help = "File Id") final String fileId,
+      @CliOption(key = {
+          "skipValidation"}, help = "Ordering", unspecifiedDefaultValue = "false") final boolean skipValidation)
+      throws Exception {
 
     HoodieTableMetaClient metaClient = HoodieCLI.tableMetadata;
     List<Pair<HoodieLogFile, HoodieLogFile>> renameActions =
-        CompactionUtils.getRenamingActionsForUnschedulingCompactionForFileId(metaClient, fileId, Optional.empty());
+        CompactionUtils.getRenamingActionsForUnschedulingCompactionForFileId(metaClient, fileId,
+            Optional.empty(), skipValidation);
 
     runRenamingOps(metaClient, renameActions);
 
@@ -257,9 +264,17 @@ public class CompactionCommand implements CommandMarker {
         .filter(op -> !op.getFileId().equals(fileId)).collect(Collectors.toList());
     HoodieCompactionPlan newPlan =
         HoodieCompactionPlan.newBuilder().setOperations(newOps).setExtraMetadata(plan.getExtraMetadata()).build();
+    HoodieInstant inflight = new HoodieInstant(State.INFLIGHT, COMPACTION_ACTION,
+        compactionOperationWithInstant.getLeft());
+    Path inflightPath = new Path(metaClient.getMetaPath(), inflight.getFileName());
+    if (metaClient.getFs().exists(inflightPath)) {
+      // revert if in inflight state
+      metaClient.getActiveTimeline().revertCompactionInflightToRequested(inflight);
+    }
     metaClient.getActiveTimeline().saveToCompactionRequested(
         new HoodieInstant(State.REQUESTED, COMPACTION_ACTION, compactionOperationWithInstant.getLeft()),
         AvroUtils.serializeCompactionPlan(newPlan));
+
     return "Successfully removed file " + fileId
         + " from compaction instant " + compactionOperationWithInstant.getLeft();
   }
@@ -282,6 +297,50 @@ public class CompactionCommand implements CommandMarker {
         }
       });
     }
+  }
+
+  @CliCommand(value = "compaction repair", help = "Repair Compaction")
+  public String repairCompaction(
+      @CliOption(key = "compactionInstant", mandatory = true, help = "Compaction Instant")
+      final String compactionInstant)
+      throws Exception {
+    HoodieTableMetaClient metaClient = HoodieCLI.tableMetadata;
+    List<CompactionValidationResult> validationResults =
+        CompactionUtils.validateCompactionPlan(metaClient, compactionInstant);
+    List<CompactionValidationResult> failed = validationResults.stream()
+        .filter(v -> !v.isSuccess()).collect(Collectors.toList());
+    if (failed.isEmpty()) {
+      return "Compaction instant " + compactionInstant + " already valid. Nothing to repair.";
+    }
+
+    final HoodieTableFileSystemView fsView = new HoodieTableFileSystemView(metaClient,
+        metaClient.getCommitsAndCompactionTimeline());
+    List<Pair<HoodieLogFile, HoodieLogFile>> renameActions = failed.stream().flatMap(v ->
+        CompactionUtils.getRenamingActionsToAlignWithCompactionOperation(metaClient, compactionInstant,
+            v.getOperation(), Optional.of(fsView)).stream()).collect(Collectors.toList());
+    runRenamingOps(metaClient, renameActions);
+    validationResults = CompactionUtils.validateCompactionPlan(metaClient, compactionInstant);
+    failed = validationResults.stream().filter(v -> !v.isSuccess()).collect(Collectors.toList());
+    List<Comparable[]> rows = new ArrayList<>();
+    failed.stream().forEach(r -> {
+      Comparable[] row = new Comparable[]{r.getOperation().getFileId(),
+          r.getOperation().getBaseInstantTime(), r.getOperation().getDataFilePath(),
+          r.getOperation().getDeltaFilePaths().size(), r.isSuccess(),
+          r.getErrorMessage().isPresent() ? r.getErrorMessage().get().getMessage() : ""};
+      rows.add(row);
+    });
+
+    System.out.println("\n\n\nThe following file-Ids are still invalid after repair:\n\n\n");
+    Map<String, Function<Object, String>> fieldNameToConverterMap = new HashMap<>();
+    TableHeader header = new TableHeader()
+        .addTableHeaderField("File Id")
+        .addTableHeaderField("Base Instant Time")
+        .addTableHeaderField("Base Data File")
+        .addTableHeaderField("Num Delta Files")
+        .addTableHeaderField("Valid")
+        .addTableHeaderField("Error");
+
+    return HoodiePrintHelper.print(header, fieldNameToConverterMap, null, false, -1, false, rows);
   }
 
   @CliCommand(value = "compaction schedule", help = "Schedule Compaction")

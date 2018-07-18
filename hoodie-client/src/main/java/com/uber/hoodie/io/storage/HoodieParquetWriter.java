@@ -105,7 +105,7 @@ public class HoodieParquetWriter<T extends HoodieRecordPayload, R extends Indexe
   }
 
   public void close() throws IOException {
-    logger.info("Closing parquet writer : " + file.toString());
+    logger.info("Closing hoodie parquet writer to file : " + file);
     super.close();
   }
 }
