@@ -19,6 +19,7 @@ package com.uber.hoodie.io.compact;
 import static java.util.stream.Collectors.toList;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import com.uber.hoodie.WriteStatus;
 import com.uber.hoodie.avro.model.HoodieCompactionOperation;
@@ -41,6 +42,7 @@ import com.uber.hoodie.io.compact.strategy.CompactionStrategy;
 import com.uber.hoodie.table.HoodieCopyOnWriteTable;
 import com.uber.hoodie.table.HoodieTable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -87,10 +89,21 @@ public class HoodieRealtimeTableCompactor implements HoodieCompactor {
     HoodieCopyOnWriteTable table = new HoodieCopyOnWriteTable(config, jsc);
     List<CompactionOperation> operations = compactionPlan.getOperations().stream().map(
             CompactionOperation::convertFromAvroRecordInstance).collect(toList());
-    log.info("Compactor compacting " + operations + " files");
-    return jsc.parallelize(operations, operations.size())
-        .map(s -> compact(table, metaClient, config, s, compactionInstantTime))
-        .flatMap(writeStatusesItr -> writeStatusesItr.iterator());
+    Iterator<List<CompactionOperation>> compactionOperationBatches = splitCompactionOperationsIntoBatchesIfNeeded
+        (operations, 20000).iterator(); // TODO : change this to config.getUpsertWriteMaxPartitions()
+    List<JavaRDD<WriteStatus>> allWriteStatuses = new ArrayList<>();
+    compactionOperationBatches.forEachRemaining(batchOfOperations -> {
+      log.info("Compactor compacting " + batchOfOperations + " files");
+      allWriteStatuses.add(jsc.parallelize(batchOfOperations, batchOfOperations.size())
+          .map(s -> compact(table, metaClient, config, s, compactionInstantTime))
+          .flatMap(writeStatusesItr -> writeStatusesItr.iterator()));
+    });
+    return jsc.union(allWriteStatuses.get(0), allWriteStatuses.subList(1, allWriteStatuses.size()))
+        .coalesce(20000); // TODO : change this to config.getUpsertWriteMaxPartitions()
+  }
+  private Iterable<List<CompactionOperation>> splitCompactionOperationsIntoBatchesIfNeeded(
+      List<CompactionOperation> operations, int maxSize) {
+    return Iterables.partition(operations, maxSize);
   }
 
   private List<WriteStatus> compact(HoodieCopyOnWriteTable hoodieCopyOnWriteTable, HoodieTableMetaClient metaClient,
