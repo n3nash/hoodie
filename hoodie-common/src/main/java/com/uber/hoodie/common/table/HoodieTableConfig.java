@@ -119,6 +119,40 @@ public class HoodieTableConfig implements Serializable {
 
 
   /**
+   * Ovverride the contents in hoodie.properties
+   */
+  public static void overrideHoodieProperties(FileSystem fs, Path metadataFolder,
+      Properties properties) throws IOException {
+    if (!fs.exists(metadataFolder)) {
+      fs.mkdirs(metadataFolder);
+    }
+    Path propertyPath = new Path(metadataFolder, HOODIE_PROPERTIES_FILE);
+    FSDataOutputStream outputStream = fs.create(propertyPath);
+    try {
+      if (!properties.containsKey(HOODIE_TABLE_NAME_PROP_NAME)) {
+        throw new IllegalArgumentException(
+            HOODIE_TABLE_NAME_PROP_NAME + " property needs to be specified");
+      }
+      if (!properties.containsKey(HOODIE_TABLE_TYPE_PROP_NAME)) {
+          throw new IllegalArgumentException(
+              HOODIE_TABLE_TYPE_PROP_NAME + " property needs to be specified");
+      }
+      if (!properties.containsKey(HOODIE_PAYLOAD_CLASS_PROP_NAME)) {
+        throw new IllegalArgumentException(
+            HOODIE_PAYLOAD_CLASS_PROP_NAME + " property needs to be specified");
+      }
+      if (!properties.containsKey(HOODIE_ARCHIVELOG_FOLDER_PROP_NAME)) {
+        properties.setProperty(HOODIE_ARCHIVELOG_FOLDER_PROP_NAME, DEFAULT_ARCHIVELOG_FOLDER);
+      }
+      properties
+          .store(outputStream, "Properties overridden on " + new Date(System.currentTimeMillis()));
+    } finally {
+      outputStream.close();
+    }
+  }
+
+
+  /**
    * Read the table type from the table properties and if not found, return the default
    */
   public HoodieTableType getTableType() {

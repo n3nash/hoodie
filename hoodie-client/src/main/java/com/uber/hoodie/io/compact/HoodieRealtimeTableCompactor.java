@@ -19,7 +19,7 @@ package com.uber.hoodie.io.compact;
 import static java.util.stream.Collectors.toList;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
 import com.uber.hoodie.WriteStatus;
 import com.uber.hoodie.avro.model.HoodieCompactionOperation;
@@ -33,6 +33,7 @@ import com.uber.hoodie.common.table.HoodieTableMetaClient;
 import com.uber.hoodie.common.table.HoodieTimeline;
 import com.uber.hoodie.common.table.TableFileSystemView;
 import com.uber.hoodie.common.table.log.HoodieMergedLogRecordScanner;
+import com.uber.hoodie.common.table.timeline.HoodieInstant;
 import com.uber.hoodie.common.util.CompactionUtils;
 import com.uber.hoodie.common.util.FSUtils;
 import com.uber.hoodie.common.util.HoodieAvroUtils;
@@ -41,6 +42,7 @@ import com.uber.hoodie.io.compact.strategy.CompactionStrategy;
 import com.uber.hoodie.table.HoodieCopyOnWriteTable;
 import com.uber.hoodie.table.HoodieTable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -87,10 +89,21 @@ public class HoodieRealtimeTableCompactor implements HoodieCompactor {
     HoodieCopyOnWriteTable table = new HoodieCopyOnWriteTable(config, jsc);
     List<CompactionOperation> operations = compactionPlan.getOperations().stream().map(
             CompactionOperation::convertFromAvroRecordInstance).collect(toList());
-    log.info("Compactor compacting " + operations + " files");
-    return jsc.parallelize(operations, operations.size())
-        .map(s -> compact(table, metaClient, config, s, compactionInstantTime))
-        .flatMap(writeStatusesItr -> writeStatusesItr.iterator());
+    Iterator<List<CompactionOperation>> compactionOperationBatches = splitCompactionOperationsIntoBatchesIfNeeded
+        (operations, 20000).iterator(); // TODO : change this to config.getUpsertWriteMaxPartitions()
+    List<JavaRDD<WriteStatus>> allWriteStatuses = new ArrayList<>();
+    compactionOperationBatches.forEachRemaining(batchOfOperations -> {
+      log.info("Compactor compacting " + batchOfOperations + " files");
+      allWriteStatuses.add(jsc.parallelize(batchOfOperations, batchOfOperations.size())
+          .map(s -> compact(table, metaClient, config, s, compactionInstantTime))
+          .flatMap(writeStatusesItr -> writeStatusesItr.iterator()));
+    });
+    return jsc.union(allWriteStatuses.get(0), allWriteStatuses.subList(1, allWriteStatuses.size()))
+        .coalesce(20000); // TODO : change this to config.getUpsertWriteMaxPartitions()
+  }
+  private Iterable<List<CompactionOperation>> splitCompactionOperationsIntoBatchesIfNeeded(
+      List<CompactionOperation> operations, int maxSize) {
+    return Iterables.partition(operations, maxSize);
   }
 
   private List<WriteStatus> compact(HoodieCopyOnWriteTable hoodieCopyOnWriteTable, HoodieTableMetaClient metaClient,
@@ -120,9 +133,6 @@ public class HoodieRealtimeTableCompactor implements HoodieCompactor {
         config.getMaxMemoryPerCompaction(), config.getCompactionLazyBlockReadEnabled(),
         config.getCompactionReverseLogReadEnabled(), config.getMaxDFSStreamBufferSize(),
         config.getSpillableMapBasePath());
-    if (!scanner.iterator().hasNext()) {
-      return Lists.<WriteStatus>newArrayList();
-    }
 
     Optional<HoodieDataFile> oldDataFileOpt = hoodieCopyOnWriteTable.getROFileSystemView()
         .getLatestDataFilesOn(operation.getPartitionPath(), operation.getBaseInstantTime())
@@ -183,6 +193,12 @@ public class HoodieRealtimeTableCompactor implements HoodieCompactor {
             config.shouldAssumeDatePartitioning());
 
     TableFileSystemView.RealtimeView fileSystemView = hoodieTable.getRTFileSystemView();
+    // Get all commits in the timeline with COMMIT action
+    List<String> allCommits = metaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants()
+        .getInstants().map(hoodieInstant -> hoodieInstant.getTimestamp())
+        .collect(Collectors.toList());
+    com.google.common.base.Optional<HoodieInstant> earliestCommitTime = com.google.common.base.Optional.fromNullable(
+        metaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants().firstInstant().orElse(null));
     log.info("Compaction looking for files to compact in " + partitionPaths + " partitions");
     List<HoodieCompactionOperation> operations =
         jsc.parallelize(partitionPaths, partitionPaths.size())
@@ -202,7 +218,8 @@ public class HoodieRealtimeTableCompactor implements HoodieCompactor {
                       return new CompactionOperation(dataFile, partitionPath, logFiles,
                           config.getCompactionStrategy().captureMetrics(config, dataFile, partitionPath, logFiles));
                     })
-                .filter(c -> !c.getDeltaFilePaths().isEmpty())
+                .filter(c -> !c.getDeltaFilePaths().isEmpty() || isParquetWrittenFromDeltaCommit(allCommits,
+                    earliestCommitTime, c))
                 .collect(toList()).iterator()).collect().stream().map(CompactionUtils::buildHoodieCompactionOperation)
             .collect(toList());
     log.info("Total of " + operations.size() + " compactions are retrieved");
@@ -222,5 +239,16 @@ public class HoodieRealtimeTableCompactor implements HoodieCompactor {
       log.warn("After filtering, Nothing to compact for " + metaClient.getBasePath());
     }
     return compactionPlan;
+  }
+
+  // Return true if the particular parquet file does not have a corresponding COMMIT action
+  // Also, check if the commitTime is earlier than the earliest available commit, if yes, then it will automatically
+  // get picked up in the HoodieInputFormat during query so we can avoid compacting base parquet repeatedly
+  private boolean isParquetWrittenFromDeltaCommit(List<String> allCommits,
+      com.google.common.base.Optional<HoodieInstant> earliestCommit, CompactionOperation compactionOperation) {
+    String commitTime = compactionOperation.getBaseInstantTime();
+    boolean isCommitForFileSliceEarlierThanEarliestCommit = earliestCommit.isPresent() ? HoodieTimeline
+        .compareTimestamps(commitTime, earliestCommit.get().getTimestamp(), HoodieTimeline.GREATER_OR_EQUAL) : true;
+    return !allCommits.contains(commitTime) && isCommitForFileSliceEarlierThanEarliestCommit;
   }
 }
