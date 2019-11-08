@@ -79,11 +79,11 @@ class RealtimeUnmergedRecordReader extends AbstractRealtimeRecordReader
         Boolean
             .valueOf(jobConf.get(COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP, DEFAULT_COMPACTION_LAZY_BLOCK_READ_ENABLED)),
         false, jobConf.getInt(MAX_DFS_STREAM_BUFFER_SIZE_PROP, DEFAULT_MAX_DFS_STREAM_BUFFER_SIZE), record -> {
-          // convert Hoodie log record to Hadoop AvroWritable and buffer
-          GenericRecord rec = (GenericRecord) record.getData().getInsertValue(getReaderSchema()).get();
-          ArrayWritable aWritable = (ArrayWritable) avroToArrayWritable(rec, getWriterSchema());
-          this.executor.getQueue().insertRecord(aWritable);
-        });
+      // convert Hoodie log record to Hadoop AvroWritable and buffer
+      GenericRecord rec = (GenericRecord) record.getData().getInsertValue(getReaderSchema()).get();
+      ArrayWritable aWritable = (ArrayWritable) avroToArrayWritable(rec, getWriterSchema());
+      this.executor.getQueue().insertRecord(aWritable);
+    });
     // Start reading and buffering
     this.executor.startProducers();
   }

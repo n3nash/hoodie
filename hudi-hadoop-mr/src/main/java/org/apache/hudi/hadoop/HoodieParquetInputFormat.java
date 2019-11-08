@@ -62,6 +62,22 @@ public class HoodieParquetInputFormat extends MapredParquetInputFormat implement
 
   protected Configuration conf;
 
+  /**
+   * Read the table metadata from a data path. This assumes certain hierarchy of files which should be changed once a
+   * better way is figured out to pass in the hoodie meta directory
+   */
+  protected static HoodieTableMetaClient getTableMetaClient(FileSystem fs, Path dataPath) throws IOException {
+    int levels = HoodieHiveUtil.DEFAULT_LEVELS_TO_BASEPATH;
+    if (HoodiePartitionMetadata.hasPartitionMetadata(fs, dataPath)) {
+      HoodiePartitionMetadata metadata = new HoodiePartitionMetadata(fs, dataPath);
+      metadata.readFromFS();
+      levels = metadata.getPartitionDepth();
+    }
+    Path baseDir = HoodieHiveUtil.getNthParent(dataPath, levels);
+    LOG.info("Reading hoodie metadata from path " + baseDir.toString());
+    return new HoodieTableMetaClient(fs.getConf(), baseDir.toString());
+  }
+
   @Override
   public FileStatus[] listStatus(JobConf job) throws IOException {
     // Get all the file status from FileInputFormat and then do the filter
@@ -171,12 +187,12 @@ public class HoodieParquetInputFormat extends MapredParquetInputFormat implement
     return grouped;
   }
 
-  public void setConf(Configuration conf) {
-    this.conf = conf;
-  }
-
   public Configuration getConf() {
     return conf;
+  }
+
+  public void setConf(Configuration conf) {
+    this.conf = conf;
   }
 
   @Override
@@ -195,21 +211,5 @@ public class HoodieParquetInputFormat extends MapredParquetInputFormat implement
     // clearOutExistingPredicate(job);
     // }
     return super.getRecordReader(split, job, reporter);
-  }
-
-  /**
-   * Read the table metadata from a data path. This assumes certain hierarchy of files which should be changed once a
-   * better way is figured out to pass in the hoodie meta directory
-   */
-  protected static HoodieTableMetaClient getTableMetaClient(FileSystem fs, Path dataPath) throws IOException {
-    int levels = HoodieHiveUtil.DEFAULT_LEVELS_TO_BASEPATH;
-    if (HoodiePartitionMetadata.hasPartitionMetadata(fs, dataPath)) {
-      HoodiePartitionMetadata metadata = new HoodiePartitionMetadata(fs, dataPath);
-      metadata.readFromFS();
-      levels = metadata.getPartitionDepth();
-    }
-    Path baseDir = HoodieHiveUtil.getNthParent(dataPath, levels);
-    LOG.info("Reading hoodie metadata from path " + baseDir.toString());
-    return new HoodieTableMetaClient(fs.getConf(), baseDir.toString());
   }
 }

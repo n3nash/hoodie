@@ -85,8 +85,8 @@ public abstract class AbstractRealtimeRecordReader {
 
   protected final HoodieRealtimeFileSplit split;
   protected final JobConf jobConf;
-  private final MessageType baseFileSchema;
   protected final boolean usesCustomPayload;
+  private final MessageType baseFileSchema;
   // Schema handles
   private Schema readerSchema;
   private Schema writerSchema;
@@ -106,12 +106,6 @@ public abstract class AbstractRealtimeRecordReader {
     } catch (IOException e) {
       throw new HoodieIOException("Could not create HoodieRealtimeRecordReader on path " + this.split.getPath(), e);
     }
-  }
-
-  private boolean usesCustomPayload() {
-    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(jobConf, split.getBasePath());
-    return !(metaClient.getTableConfig().getPayloadClass().contains(HoodieAvroPayload.class.getName())
-        || metaClient.getTableConfig().getPayloadClass().contains("org.apache.hudi.OverwriteWithLatestAvroPayload"));
   }
 
   /**
@@ -309,6 +303,12 @@ public abstract class AbstractRealtimeRecordReader {
         .filter(x -> !firstLevelFieldNames.contains(x)).collect(Collectors.toList());
 
     return HoodieAvroUtils.appendNullSchemaFields(schema, fieldsToAdd);
+  }
+
+  private boolean usesCustomPayload() {
+    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(jobConf, split.getBasePath());
+    return !(metaClient.getTableConfig().getPayloadClass().contains(HoodieAvroPayload.class.getName())
+        || metaClient.getTableConfig().getPayloadClass().contains("org.apache.hudi.OverwriteWithLatestAvroPayload"));
   }
 
   /**

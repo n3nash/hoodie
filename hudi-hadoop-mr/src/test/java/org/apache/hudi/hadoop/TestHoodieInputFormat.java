@@ -38,8 +38,21 @@ import org.junit.rules.TemporaryFolder;
 
 public class TestHoodieInputFormat {
 
+  @Rule
+  public TemporaryFolder basePath = new TemporaryFolder();
   private HoodieParquetInputFormat inputFormat;
   private JobConf jobConf;
+
+  public static void ensureFilesInCommit(String msg, FileStatus[] files, String commit, int expected) {
+    int count = 0;
+    for (FileStatus file : files) {
+      String commitTs = FSUtils.getCommitTime(file.getPath().getName());
+      if (commit.equals(commitTs)) {
+        count++;
+      }
+    }
+    assertEquals(msg, expected, count);
+  }
 
   @Before
   public void setUp() {
@@ -47,9 +60,6 @@ public class TestHoodieInputFormat {
     jobConf = new JobConf();
     inputFormat.setConf(jobConf);
   }
-
-  @Rule
-  public TemporaryFolder basePath = new TemporaryFolder();
 
   @Test
   public void testInputFormatLoad() throws IOException {
@@ -210,16 +220,5 @@ public class TestHoodieInputFormat {
     }
     assertEquals(msg, expectedNumberOfRecordsInCommit, actualCount);
     assertEquals(msg, totalExpected, totalCount);
-  }
-
-  public static void ensureFilesInCommit(String msg, FileStatus[] files, String commit, int expected) {
-    int count = 0;
-    for (FileStatus file : files) {
-      String commitTs = FSUtils.getCommitTime(file.getPath().getName());
-      if (commit.equals(commitTs)) {
-        count++;
-      }
-    }
-    assertEquals(msg, expected, count);
   }
 }

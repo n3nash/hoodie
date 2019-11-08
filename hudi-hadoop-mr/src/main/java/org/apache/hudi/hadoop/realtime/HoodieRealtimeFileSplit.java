@@ -49,18 +49,6 @@ public class HoodieRealtimeFileSplit extends FileSplit {
     this.basePath = basePath;
   }
 
-  public List<String> getDeltaFilePaths() {
-    return deltaFilePaths;
-  }
-
-  public String getMaxCommitTime() {
-    return maxCommitTime;
-  }
-
-  public String getBasePath() {
-    return basePath;
-  }
-
   private static void writeString(String str, DataOutput out) throws IOException {
     byte[] bytes = str.getBytes(StandardCharsets.UTF_8);
     out.writeInt(bytes.length);
@@ -73,6 +61,17 @@ public class HoodieRealtimeFileSplit extends FileSplit {
     return new String(bytes, StandardCharsets.UTF_8);
   }
 
+  public List<String> getDeltaFilePaths() {
+    return deltaFilePaths;
+  }
+
+  public String getMaxCommitTime() {
+    return maxCommitTime;
+  }
+
+  public String getBasePath() {
+    return basePath;
+  }
 
   @Override
   public void write(DataOutput out) throws IOException {
