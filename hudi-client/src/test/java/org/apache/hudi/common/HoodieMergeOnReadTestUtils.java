@@ -49,7 +49,7 @@ public class HoodieMergeOnReadTestUtils {
   }
 
   public static List<GenericRecord> getRecordsUsingInputFormat(List<String> inputPaths, String basePath,
-                                                                Configuration conf) {
+      Configuration conf) {
     JobConf jobConf = new JobConf(conf);
     Schema schema = HoodieAvroUtils.addMetadataFields(
         new Schema.Parser().parse(HoodieTestDataGenerator.TRIP_EXAMPLE_SCHEMA));
