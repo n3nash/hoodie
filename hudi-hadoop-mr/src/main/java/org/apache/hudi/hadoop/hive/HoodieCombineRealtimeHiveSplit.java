@@ -25,15 +25,12 @@ import org.apache.hadoop.hive.ql.plan.PartitionDesc;
 import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.lib.CombineFileSplit;
-import org.apache.hudi.hadoop.hive.HoodieRealtimeCombineHiveInputFormat.CombineHiveInputSplit;
+import org.apache.hudi.hadoop.hive.HoodieCombineHiveInputFormat.CombineHiveInputSplit;
 
 /**
  * Represents a CombineHiveInputSplit for realtime tables
  */
 public class HoodieCombineRealtimeHiveSplit extends CombineHiveInputSplit {
-
-  // This should be an instance of HoodieCombineRealtimeFileSplit
-  public CombineFileSplit combineFileSplit;
 
   public HoodieCombineRealtimeHiveSplit() throws IOException {
     super(ShimLoader.getHadoopShims().getCombineFileInputFormat().getInputSplitShim());
@@ -43,10 +40,5 @@ public class HoodieCombineRealtimeHiveSplit extends CombineHiveInputSplit {
       combineFileSplit, Map<Path, PartitionDesc> map)
       throws IOException {
     super(jobConf, combineFileSplit, map);
-    this.combineFileSplit = combineFileSplit;
-  }
-
-  public CombineFileSplit getCombineFileSplit() {
-    return combineFileSplit;
   }
 }

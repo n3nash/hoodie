@@ -18,15 +18,22 @@
 
 package org.apache.hudi.hadoop.hive;
 
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.lib.CombineFileSplit;
+import org.apache.hudi.common.util.ReflectionUtils;
+import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.hadoop.realtime.HoodieRealtimeFileSplit;
 
 /**
@@ -35,12 +42,12 @@ import org.apache.hudi.hadoop.realtime.HoodieRealtimeFileSplit;
 public class HoodieCombineRealtimeFileSplit extends CombineFileSplit {
 
   // These are instances of HoodieRealtimeSplits
-  List<InputSplit> realtimeFileSplits;
+  List<FileSplit> realtimeFileSplits = new ArrayList<>();
 
   public HoodieCombineRealtimeFileSplit() {
   }
 
-  public HoodieCombineRealtimeFileSplit(JobConf jobConf, List<InputSplit> realtimeFileSplits) {
+  public HoodieCombineRealtimeFileSplit(JobConf jobConf, List<FileSplit> realtimeFileSplits) {
     super(jobConf, realtimeFileSplits.stream().map(p ->
             ((HoodieRealtimeFileSplit) p).getPath()).collect(Collectors.toList()).toArray(new
             Path[realtimeFileSplits.size()]),
@@ -56,31 +63,105 @@ public class HoodieCombineRealtimeFileSplit extends CombineFileSplit {
           }
         }).flatMap(List::stream).collect(Collectors.toList()).toArray(new
             String[realtimeFileSplits.size()]));
-    System.out.println("BasePath => " + ((HoodieRealtimeFileSplit)realtimeFileSplits.get(0)).getBasePath());
-    System.out.println("Path => " + ((HoodieRealtimeFileSplit)realtimeFileSplits.get(0)).getPath().toString());
     this.realtimeFileSplits = realtimeFileSplits;
+
   }
 
-  public List<InputSplit> getRealtimeFileSplits() {
+  public List<FileSplit> getRealtimeFileSplits() {
     return realtimeFileSplits;
   }
 
   @Override
   public String toString() {
-    return super.toString();
+    return "HoodieCombineRealtimeFileSplit{"
+        + "realtimeFileSplits=" + realtimeFileSplits
+        + '}';
+  }
+
+  /**
+   * Writable interface.
+   */
+  @Override
+  public void write(DataOutput out) throws IOException {
+    out.writeInt(realtimeFileSplits.size());
+    for(InputSplit inputSplit: realtimeFileSplits) {
+      Text.writeString(out, inputSplit.getClass().getName());
+      inputSplit.write(out);
+    }
+  }
+
+  public void readFields(DataInput in) throws IOException {
+    int listLength = in.readInt();
+    realtimeFileSplits = new ArrayList<>(listLength);
+    for(int i = 0; i < listLength; i++) {
+      String inputClassName = Text.readString(in);
+      HoodieRealtimeFileSplit inputSplit = ReflectionUtils.loadClass(inputClassName);
+      inputSplit.readFields(in);
+      realtimeFileSplits.add(inputSplit);
+    }
+  }
+
+  public long getLength() {
+    return realtimeFileSplits.size();
+  }
+
+  /** Returns an array containing the start offsets of the files in the split*/
+  public long[] getStartOffsets() {
+    return realtimeFileSplits.stream().mapToLong(x -> 0L).toArray();
+  }
+
+  /** Returns an array containing the lengths of the files in the split*/
+  public long[] getLengths() {
+    return realtimeFileSplits.stream().mapToLong(FileSplit::getLength).toArray();
+  }
+
+  /** Returns the start offset of the i<sup>th</sup> Path */
+  public long getOffset(int i) {
+    return 0;
+  }
+
+  /** Returns the length of the i<sup>th</sup> Path */
+  public long getLength(int i) {
+    return realtimeFileSplits.get(i).getLength();
+  }
+
+  /** Returns the number of Paths in the split */
+  public int getNumPaths() {
+    return realtimeFileSplits.size();
+  }
+
+  /** Returns the i<sup>th</sup> Path */
+  public Path getPath(int i) {
+    return realtimeFileSplits.get(i).getPath();
+  }
+
+  /** Returns all the Paths in the split */
+  public Path[] getPaths() {
+    return realtimeFileSplits.stream().map(x -> x.getPath()).toArray(Path[]::new);
+  }
+
+  /** Returns all the Paths where this input-split resides */
+  public String[] getLocations() throws IOException {
+    return realtimeFileSplits.stream().flatMap(x -> {
+      try {
+        return Arrays.stream(x.getLocations());
+      } catch (IOException e) {
+        throw new HoodieIOException(e.getMessage(), e);
+      }
+    }).toArray(String[]::new);
   }
 
   public static class Builder {
 
     // These are instances of HoodieRealtimeSplits
-    public List<InputSplit> realtimeFileSplits = new ArrayList<>();
+    public List<FileSplit> fileSplits = new ArrayList<>();
 
-    public void addSplit(InputSplit split) {
-      realtimeFileSplits.add(split);
+    public void addSplit(FileSplit split) {
+      fileSplits.add(split);
     }
 
     public HoodieCombineRealtimeFileSplit build(JobConf conf) {
-      return new HoodieCombineRealtimeFileSplit(conf, realtimeFileSplits);
+      return new HoodieCombineRealtimeFileSplit(conf, fileSplits);
     }
   }
 }
