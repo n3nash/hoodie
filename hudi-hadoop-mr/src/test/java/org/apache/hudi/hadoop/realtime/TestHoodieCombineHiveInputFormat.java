@@ -22,7 +22,9 @@ import static org.apache.hadoop.hive.ql.exec.Utilities.HAS_MAP_WORK;
 import static org.apache.hadoop.hive.ql.exec.Utilities.MAPRED_MAPPER_CLASS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
+import org.apache.hadoop.hive.ql.exec.Operator;
 import org.apache.hudi.avro.HoodieAvroUtils;
 import org.apache.hudi.common.HoodieCommonTestHarness;
 import org.apache.hudi.common.minicluster.MiniClusterUtil;
@@ -51,13 +53,13 @@ import org.apache.hudi.hadoop.hive.HoodieCombineHiveInputFormat;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 
 public class TestHoodieCombineHiveInputFormat extends HoodieCommonTestHarness {
@@ -89,7 +91,6 @@ public class TestHoodieCombineHiveInputFormat extends HoodieCommonTestHarness {
   }
 
   @Test
-  @Ignore
   public void testHoodieRealtimeCombineHoodieInputFormat() throws Exception {
 
     Configuration conf = new Configuration();
@@ -121,11 +122,21 @@ public class TestHoodieCombineHiveInputFormat extends HoodieCommonTestHarness {
 
     TableDesc tblDesc = Utilities.defaultTd;
     // Set the input format
-    tblDesc.setInputFileFormatClass(HoodieCombineHiveInputFormat.class);
+    tblDesc.setInputFileFormatClass(HoodieParquetRealtimeInputFormat.class);
     PartitionDesc partDesc = new PartitionDesc(tblDesc, null);
+    LinkedHashMap<Path, ArrayList<String>> pathToAliasTable = new LinkedHashMap<>();
+
     LinkedHashMap<Path, PartitionDesc> pt = new LinkedHashMap<>();
-    pt.put(new Path(basePath.getRoot().getAbsolutePath()), partDesc);
+    pt.put(new Path(basePath.getRoot().getAbsolutePath() + "/2016/05/01"), partDesc);
     MapredWork mrwork = new MapredWork();
+    Path[] testPartitionsPaths = new Path[1];
+    String testPartitionName = "2016/05/01";
+    testPartitionsPaths[0] = new Path(basePath.getRoot().getAbsolutePath() + "/2016/05/01");
+    ArrayList<String> aliases = new ArrayList<>();
+    aliases.add(testPartitionName);
+    pathToAliasTable.put(testPartitionsPaths[0], aliases);
+    mrwork.getMapWork().getAliasToWork().put(testPartitionName, (Operator<?>) mock(Operator.class));
+    mrwork.getMapWork().setPathToAliases(pathToAliasTable);
     mrwork.getMapWork().setPathToPartitionInfo(pt);
     Path mapWorkPath = new Path(basePath.getRoot().getAbsolutePath());
     Utilities.setMapRedWork(conf, mrwork, mapWorkPath);
@@ -136,7 +147,8 @@ public class TestHoodieCombineHiveInputFormat extends HoodieCommonTestHarness {
     // The following config tells Hive to choose ExecMapper to read the MAP_WORK
     jobConf.set(MAPRED_MAPPER_CLASS, ExecMapper.class.getName());
     // setting the split size to be 3 to create one split for 3 file groups
-    jobConf.set(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.SPLIT_MAXSIZE, "3");
+    jobConf.set(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.SPLIT_MINSIZE, "3");
+
 
     HoodieCombineHiveInputFormat combineHiveInputFormat = new HoodieCombineHiveInputFormat();
     String tripsHiveColumnTypes = "double,string,string,string,double,double,double,double,double";

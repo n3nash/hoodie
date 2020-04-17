@@ -191,7 +191,6 @@ public class HoodieCombineHiveInputFormat<K extends WritableComparable, V extend
         // if mapper can span partitions, make sure a splits does not contain multiple
         // opList + inputFormatClassName + deserializerClassName combination
         // This is done using the Map of CombinePathInputFormat to PathFilter
-
         opList = HiveFileFormatUtils.doGetWorksFromPath(pathToAliases, aliasToWork, filterPath);
         CombinePathInputFormat combinePathInputFormat =
             new CombinePathInputFormat(opList, inputFormatClassName, deserializerClassName);
@@ -854,6 +853,7 @@ public class HoodieCombineHiveInputFormat<K extends WritableComparable, V extend
     public CombineFileSplit[] getSplits(JobConf job, int numSplits) throws IOException {
       long minSize = job.getLong(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.SPLIT_MINSIZE, 0L);
       long maxSize = job.getLong(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.SPLIT_MAXSIZE, minSize);
+
       if (job.getLong("mapreduce.input.fileinputformat.split.minsize.per.node", 0L) == 0L) {
         super.setMinSplitSizeNode(minSize);
       }
@@ -865,6 +865,7 @@ public class HoodieCombineHiveInputFormat<K extends WritableComparable, V extend
       if (job.getLong(org.apache.hadoop.mapreduce.lib.input.FileInputFormat.SPLIT_MAXSIZE, 0L) == 0L) {
         super.setMaxSplitSize(minSize);
       }
+
       LOG.info("mapreduce.input.fileinputformat.split.minsize=" + minSize
           + ", mapreduce.input.fileinputformat.split.maxsize=" + maxSize);
 
@@ -895,6 +896,7 @@ public class HoodieCombineHiveInputFormat<K extends WritableComparable, V extend
         return combineFileSplits.toArray(new CombineFileSplit[combineFileSplits.size()]);
       } else {
         InputSplit[] splits = super.getSplits(job, numSplits);
+
         ArrayList inputSplitShims = new ArrayList();
 
         for (int pos = 0; pos < splits.length; ++pos) {
