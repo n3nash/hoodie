@@ -90,6 +90,7 @@ public class HoodieTestSuiteJob {
   public HoodieTestSuiteJob(HoodieTestSuiteConfig cfg, JavaSparkContext jsc) throws IOException {
     this.cfg = cfg;
     this.jsc = jsc;
+    cfg.propsFilePath = FSUtils.addSchemeIfLocalPath(cfg.propsFilePath).toString();
     this.sparkSession = SparkSession.builder().config(jsc.getConf()).getOrCreate();
     this.fs = FSUtils.getFs(cfg.inputBasePath, jsc.hadoopConfiguration());
     this.props = UtilHelpers.readConfig(fs, new Path(cfg.propsFilePath), cfg.configs).getConfig();
@@ -127,7 +128,7 @@ public class HoodieTestSuiteJob {
     try {
       WorkflowDag workflowDag = this.cfg.workloadYamlPath == null ? ((WorkflowDagGenerator) ReflectionUtils
           .loadClass((this.cfg).workloadDagGenerator)).build()
-          : DagUtils.convertYamlPathToDag(this.fs, this.cfg.workloadYamlPath);
+          : DagUtils.convertYamlPathToDag(FSUtils.getFs(this.cfg.workloadYamlPath, jsc.hadoopConfiguration(), true), this.cfg.workloadYamlPath);
       log.info("Workflow Dag => " + DagUtils.convertDagToYaml(workflowDag));
       long startTime = System.currentTimeMillis();
       String schemaStr = schemaProvider.getSourceSchema().toString();
@@ -143,6 +144,7 @@ public class HoodieTestSuiteJob {
       log.error("Failed to run Test Suite ", e);
       throw new HoodieException("Failed to run Test Suite ", e);
     } finally {
+      sparkSession.stop();
       jsc.stop();
     }
   }
